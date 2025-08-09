@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Çalışma Portalı</title>
+  <style>
+    :root{
+      --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --acc:#22d3ee; --acc2:#a78bfa;
+      --ok:#10b981; --warn:#f59e0b; --err:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(120deg,#0b1025,#0f172a 40%,#0b1329);color:var(--text)}
+    .app{display:grid;grid-template-columns:300px 1fr;min-height:100dvh}
+    aside{border-right:1px solid #1f2937;background:#0b1025;padding:16px;overflow:auto}
+    main{padding:20px;}
+
+    .brand{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+    .brand .dot{width:10px;height:10px;border-radius:999px;background:var(--acc);box-shadow:0 0 12px var(--acc)}
+    h1{font-size:18px;margin:0}
+
+    .card{background:linear-gradient(180deg,#0b1025,#0b1025 40%,#0c1933);border:1px solid #1f2937;border-radius:16px;padding:14px}
+    .row{display:flex;gap:10px;align-items:center}
+    .col{display:flex;flex-direction:column;gap:8px}
+    label{font-size:12px;color:var(--muted)}
+    select, textarea, input[type="text"]{width:100%;background:#0b1025;color:var(--text);border:1px solid #1f2937;border-radius:10px;padding:10px;outline:none}
+    select:focus, textarea:focus, input[type="text"]:focus{border-color:var(--acc2);box-shadow:0 0 0 3px #a78bfa33}
+
+    .btn{cursor:pointer;background:linear-gradient(90deg,var(--acc),var(--acc2));color:#0b1025;border:none;padding:10px 12px;border-radius:12px;font-weight:600}
+    .btn.ghost{background:#0b1025;color:var(--text);border:1px solid #1f2937}
+    .btn.warn{background:var(--warn);color:#111827}
+    .btn.ok{background:var(--ok);color:#0b1025}
+    .btn.err{background:var(--err)}
+
+    .section-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .section-item{padding:8px 10px;border:1px solid #1f2937;border-radius:10px;display:flex;justify-content:space-between;align-items:center;background:#0b1025}
+    .progress{height:8px;background:#0b1025;border:1px solid #1f2937;border-radius:999px;overflow:hidden}
+    .progress > span{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));width:0}
+
+    .tabs{display:flex;gap:8px;margin:12px 0}
+    .tab{padding:10px 12px;border-radius:12px;border:1px solid #1f2937;background:#0b1025;cursor:pointer}
+    .tab.active{background:linear-gradient(90deg,#1d2242,#111b36);border-color:#334155}
+
+    .content{display:none}
+    .content.active{display:block}
+
+    .content-view{background:#0b1025;border:1px solid #1f2937;border-radius:16px;padding:16px;line-height:1.7;white-space:pre-wrap}
+    .muted{color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid #1f2937;background:#0b1025;font-size:12px}
+
+    .quiz-item{border:1px solid #1f2937;border-radius:12px;padding:12px;background:#0b1025;margin-bottom:10px}
+    .quiz-item.correct{border-color:#134e4a;background:#052e2b}
+    .quiz-item.wrong{border-color:#7f1d1d;background:#2a0b0b}
+
+    .footer{margin-top:20px;color:var(--muted);font-size:12px}
+    .kbd{padding:2px 6px;border:1px solid #334155;border-bottom-width:2px;border-radius:6px;background:#0b1025}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand"><span class="dot"></span><h1>Çalışma Portalı</h1></div>
+      <div class="card col">
+        <label for="pdfSelect">PDF / Kaynak Seç</label>
+        <select id="pdfSelect"></select>
+        <div class="row">
+          <button class="btn" id="addPdfBtn">+ Kaynak Ekle</button>
+          <button class="btn ghost" id="renamePdfBtn">Yeniden Adlandır</button>
+          <button class="btn warn" id="delPdfBtn">Sil</button>
+        </div>
+      </div>
+
+      <div class="card col" style="margin-top:12px">
+        <label for="sectionSelect">Bölüm Seç</label>
+        <select id="sectionSelect"></select>
+        <div class="row">
+          <button class="btn" id="addSectionBtn">+ Bölüm Ekle</button>
+          <button class="btn ghost" id="renameSectionBtn">Yeniden Adlandır</button>
+          <button class="btn warn" id="delSectionBtn">Sil</button>
+        </div>
+        <div class="section-list" id="sectionList"></div>
+      </div>
+
+      <div class="card col" style="margin-top:12px">
+        <label>İlerleme</label>
+        <div class="progress"><span id="globalProgress"></span></div>
+        <small class="muted" id="progressText">0% tamamlandı</small>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ok" id="exportBtn">Dışa Aktar</button>
+          <button class="btn ghost" id="importBtn">İçe Aktar</button>
+          <input type="file" id="importFile" accept="application/json" style="display:none" />
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="pill">İpucu: <span class="kbd">Ctrl</span> + <span class="kbd">S</span> = Kaydet</div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="tabs">
+        <button class="tab active" data-tab="study">Anlatım</button>
+        <button class="tab" data-tab="quiz">Sınav Modu</button>
+        <button class="tab" data-tab="editor">İçerik Ekle/Düzenle</button>
+        <button class="tab" data-tab="qeditor">Soru Editörü</button>
+        <span class="pill" id="crumb">—</span>
+      </div>
+
+      <!-- STUDY -->
+      <section class="content active" id="tab-study">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+          <input id="search" type="text" placeholder="Bu bölüm içinde ara..." />
+          <div class="pill" id="wordCount">0 kelime</div>
+        </div>
+        <article class="content-view" id="studyView">Bu bölümün metnini "İçerik Ekle/Düzenle" sekmesinden ekleyin. PDF'deki her yazıyı buraya yapıştırabilirsiniz.</article>
+        <div class="row" style="margin-top:10px;gap:6px">
+          <button class="btn ok" id="markDoneBtn">Bölümü Tamamlandı İşaretle</button>
+          <button class="btn ghost" id="resetDoneBtn">İşareti Kaldır</button>
+        </div>
+      </section>
+
+      <!-- QUIZ -->
+      <section class="content" id="tab-quiz">
+        <div class="row" style="margin-bottom:8px">
+          <button class="btn" id="startQuizBtn">Sınavı Başlat</button>
+          <button class="btn ghost" id="shuffleQuizBtn">Soruları Karıştır</button>
+          <div class="pill" id="quizStats">0/0</div>
+        </div>
+        <div id="quizArea"></div>
+      </section>
+
+      <!-- CONTENT EDITOR -->
+      <section class="content" id="tab-editor">
+        <div class="col">
+          <label>Bu bölümün tam metnini (PDF'ye %100 uyumlu) buraya yapıştırın:</label>
+          <textarea id="editor" rows="18" placeholder="Başlıklar, alt başlıklar, tablolar, kutular... PDF'de ne varsa ekleyin."></textarea>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ok" id="saveEditorBtn">Kaydet</button>
+          <button class="btn ghost" id="clearEditorBtn">Temizle</button>
+        </div>
+      </section>
+
+      <!-- QUESTION EDITOR -->
+      <section class="content" id="tab-qeditor">
+        <p class="muted">Her bölüm için 5 şıklı sorular ekleyin. İsterseniz soruları JSON ile topluca içe aktarabilirsiniz.</p>
+        <div class="col">
+          <label for="qText">Soru</label>
+          <textarea id="qText" rows="3" placeholder="Soru kökünü yazın"></textarea>
+          <label>Şıklar (A–E)</label>
+          <div class="col">
+            <input type="text" id="optA" placeholder="A" />
+            <input type="text" id="optB" placeholder="B" />
+            <input type="text" id="optC" placeholder="C" />
+            <input type="text" id="optD" placeholder="D" />
+            <input type="text" id="optE" placeholder="E" />
+          </div>
+          <label>Doğru Şık</label>
+          <select id="correct">
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+            <option value="E">E</option>
+          </select>
+          <label>Açıklama (İsteğe bağlı)</label>
+          <textarea id="explain" rows="2" placeholder="Doğru cevabın kısa açıklaması"></textarea>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ok" id="addQBtn">Soru Ekle</button>
+            <button class="btn warn" id="clearQBtn">Tüm Soruları Sil</button>
+            <button class="btn ghost" id="exportQBtn">Soruları Dışa Aktar</button>
+            <button class="btn ghost" id="importQBtn">Soruları İçe Aktar</button>
+            <input type="file" id="importQFile" accept="application/json" style="display:none" />
+          </div>
+        </div>
+        <h3>Bu Bölümün Soruları</h3>
+        <div id="qList"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+  // --- Basit Store ---
+  const Store = {
+    key: 'studyPortal.v1',
+    data: { pdfs: [], activePdfId: null },
+    load(){ try{ const s=localStorage.getItem(this.key); if(s){ this.data=JSON.parse(s);} }catch(e){console.error(e)} },
+    save(){ localStorage.setItem(this.key, JSON.stringify(this.data)); },
+  };
+
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+
+  // PDF yapısı: {id,name, sections:[{id,name, text, done, questions:[{id,q,opts:{A..E},correct,explain}]}]}
+
+  // --- UI refs ---
+  const pdfSelect = document.getElementById('pdfSelect');
+  const sectionSelect = document.getElementById('sectionSelect');
+  const sectionList = document.getElementById('sectionList');
+  const globalProgress = document.getElementById('globalProgress');
+  const progressText = document.getElementById('progressText');
+  const crumb = document.getElementById('crumb');
+
+  const studyView = document.getElementById('studyView');
+  const search = document.getElementById('search');
+  const wordCount = document.getElementById('wordCount');
+  const markDoneBtn = document.getElementById('markDoneBtn');
+  const resetDoneBtn = document.getElementById('resetDoneBtn');
+
+  const editor = document.getElementById('editor');
+
+  const quizArea = document.getElementById('quizArea');
+  const quizStats = document.getElementById('quizStats');
+
+  const qText = document.getElementById('qText');
+  const optA = document.getElementById('optA');
+  const optB = document.getElementById('optB');
+  const optC = document.getElementById('optC');
+  const optD = document.getElementById('optD');
+  const optE = document.getElementById('optE');
+  const correct = document.getElementById('correct');
+  const explain = document.getElementById('explain');
+  const qList = document.getElementById('qList');
+
+  // --- Tabs ---
+  document.querySelectorAll('.tab').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    })
+  })
+
+  // --- Helpers ---
+  function currentPdf(){ return Store.data.pdfs.find(p=>p.id===Store.data.activePdfId) || null; }
+  function currentSection(){ const p=currentPdf(); if(!p) return null; return p.sections.find(s=>s.id===p.activeSectionId)||null; }
+
+  function renderPdfs(){
+    pdfSelect.innerHTML='';
+    Store.data.pdfs.forEach(p=>{
+      const opt=document.createElement('option'); opt.value=p.id; opt.textContent=p.name; pdfSelect.appendChild(opt);
+    });
+    if(Store.data.activePdfId){ pdfSelect.value=Store.data.activePdfId; }
+    renderSections();
+  }
+
+  function renderSections(){
+    const p=currentPdf();
+    sectionSelect.innerHTML=''; sectionList.innerHTML='';
+    if(!p){ crumb.textContent='—'; updateProgress(); return; }
+    p.sections.forEach(s=>{
+      const opt=document.createElement('option'); opt.value=s.id; opt.textContent=s.name; sectionSelect.appendChild(opt);
+      const div=document.createElement('div'); div.className='section-item';
+      div.innerHTML=`<span>${s.name}</span><span class="pill">${s.done? '✓ Tamamlandı':'Devam Ediyor'}</span>`;
+      div.addEventListener('click',()=>{ p.activeSectionId=s.id; Store.save(); onSectionChange(); });
+      sectionList.appendChild(div);
+    });
+    if(!p.activeSectionId && p.sections[0]){ p.activeSectionId=p.sections[0].id; }
+    if(p.activeSectionId){ sectionSelect.value=p.activeSectionId; }
+    Store.save();
+    onSectionChange();
+  }
+
+  function onSectionChange(){
+    const p=currentPdf(); const s=currentSection();
+    if(!p||!s){ studyView.textContent='Bölüm ekleyin.'; crumb.textContent='—'; wordCount.textContent='0 kelime'; return; }
+    crumb.textContent = `${p.name} ▸ ${s.name}`;
+    studyView.textContent = s.text||'Bu bölüm boş. "İçerik Ekle/Düzenle" sekmesinden ekleyin.';
+    editor.value = s.text||'';
+    wordCount.textContent = (s.text? s.text.trim().split(/\s+/).length:0) + ' kelime';
+    renderQuestions();
+    updateProgress();
+  }
+
+  function updateProgress(){
+    const p=currentPdf();
+    if(!p){ globalProgress.style.width='0%'; progressText.textContent='0% tamamlandı'; return; }
+    const total=p.sections.length || 1; const done=p.sections.filter(s=>s.done).length; const pct=Math.round(done*100/total);
+    globalProgress.style.width=pct+'%';
+    progressText.textContent=`${pct}% tamamlandı (${done}/${total})`;
+  }
+
+  // --- Actions: PDFs ---
+  document.getElementById('addPdfBtn').addEventListener('click',()=>{
+    const name=prompt('Kaynak/PDF adı:'); if(!name) return;
+    const p={id:uid(), name, sections:[], activeSectionId:null};
+    Store.data.pdfs.push(p); Store.data.activePdfId=p.id; Store.save(); renderPdfs();
+  });
+  document.getElementById('renamePdfBtn').addEventListener('click',()=>{
+    const p=currentPdf(); if(!p) return alert('Önce bir kaynak seçin.');
+    const name=prompt('Yeni ad:', p.name); if(!name) return;
+    p.name=name; Store.save(); renderPdfs();
+  });
+  document.getElementById('delPdfBtn').addEventListener('click',()=>{
+    const p=currentPdf(); if(!p) return;
+    if(!confirm('Bu kaynağı ve içindeki tüm bölümleri silmek istediğinize emin misiniz?')) return;
+    Store.data.pdfs = Store.data.pdfs.filter(x=>x.id!==p.id);
+    Store.data.activePdfId = Store.data.pdfs[0]?.id || null;
+    Store.save(); renderPdfs();
+  });
+  pdfSelect.addEventListener('change',()=>{ Store.data.activePdfId=pdfSelect.value; Store.save(); renderSections(); });
+
+  // --- Actions: Sections ---
+  document.getElementById('addSectionBtn').addEventListener('click',()=>{
+    const p=currentPdf(); if(!p) return alert('Önce bir kaynak seçin.');
+    const name=prompt('Bölüm adı:'); if(!name) return;
+    const s={id:uid(), name, text:'', done:false, questions:[]};
+    p.sections.push(s); p.activeSectionId=s.id; Store.save(); renderSections();
+  });
+  document.getElementById('renameSectionBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return alert('Önce bölüm seçin.');
+    const name=prompt('Yeni bölüm adı:', s.name); if(!name) return;
+    s.name=name; Store.save(); renderSections();
+  });
+  document.getElementById('delSectionBtn').addEventListener('click',()=>{
+    const p=currentPdf(); const s=currentSection(); if(!p||!s) return;
+    if(!confirm('Bu bölümü silmek istiyor musunuz?')) return;
+    p.sections=p.sections.filter(x=>x.id!==s.id);
+    p.activeSectionId=p.sections[0]?.id||null;
+    Store.save(); renderSections();
+  });
+  sectionSelect.addEventListener('change',()=>{ const p=currentPdf(); if(!p) return; p.activeSectionId=sectionSelect.value; Store.save(); onSectionChange(); });
+
+  // --- Study ---
+  search.addEventListener('input',()=>{
+    const s=currentSection(); if(!s) return;
+    const q=search.value.trim();
+    if(!q){ studyView.textContent = s.text||''; return; }
+    const esc=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const re=new RegExp(`(${esc})`,'gi');
+    studyView.innerHTML=(s.text||'').replace(re,'<mark>$1</mark>');
+  });
+  markDoneBtn.addEventListener('click',()=>{ const s=currentSection(); if(!s) return; s.done=true; Store.save(); renderSections();});
+  resetDoneBtn.addEventListener('click',()=>{ const s=currentSection(); if(!s) return; s.done=false; Store.save(); renderSections();});
+
+  // --- Editor ---
+  document.getElementById('saveEditorBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return;
+    s.text=editor.value; Store.save(); onSectionChange();
+  });
+  document.getElementById('clearEditorBtn').addEventListener('click',()=>{ editor.value=''; });
+
+  // --- Quiz Logic ---
+  let quizOrder=[]; let quizIndex=0; let correctCount=0;
+  function renderQuestions(){
+    const s=currentSection(); if(!s) return; qList.innerHTML='';
+    (s.questions||[]).forEach(item=>{
+      const wrap=document.createElement('div'); wrap.className='quiz-item';
+      wrap.innerHTML=`<strong>${item.q}</strong><div class="muted">A) ${item.opts.A}<br/>B) ${item.opts.B}<br/>C) ${item.opts.C}<br/>D) ${item.opts.D}<br/>E) ${item.opts.E}</div><div class="muted">Doğru: ${item.correct}${item.explain? ' — '+item.explain:''}</div>`;
+      qList.appendChild(wrap);
+    });
+  }
+
+  function buildQuizCard(item){
+    const card=document.createElement('div'); card.className='quiz-item';
+    const opts=['A','B','C','D','E'];
+    card.innerHTML=`<div style="margin-bottom:8px"><strong>${item.q}</strong></div>`;
+    opts.forEach(k=>{
+      const btn=document.createElement('button'); btn.className='btn ghost'; btn.style.margin='4px'; btn.textContent=`${k}) ${item.opts[k]}`;
+      btn.addEventListener('click',()=>{
+        if(k===item.correct){ card.classList.add('correct'); correctCount++; }
+        else{ card.classList.add('wrong'); }
+        Array.from(card.querySelectorAll('button')).forEach(b=>b.disabled=true);
+        const exp=document.createElement('div'); exp.className='muted'; exp.style.marginTop='6px';
+        exp.textContent = `Doğru cevap: ${item.correct} — ${item.explain||''}`;
+        card.appendChild(exp);
+        quizIndex++;
+        quizStats.textContent=`${correctCount}/${quizOrder.length}`;
+        if(quizIndex<quizOrder.length){
+          setTimeout(()=>{ quizArea.appendChild(buildQuizCard(quizOrder[quizIndex])); }, 250);
+        }
+      });
+      card.appendChild(btn);
+    });
+    return card;
+  }
+
+  document.getElementById('startQuizBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return;
+    quizOrder=[...(s.questions||[])]; quizIndex=0; correctCount=0; quizArea.innerHTML='';
+    if(!quizOrder.length){
+      quizArea.innerHTML='<p class="muted">Bu bölüm için soru bulunmuyor. "Soru Editörü" sekmesinden ekleyin veya JSON içe aktarın.</p>';
+      quizStats.textContent='0/0'; return;
+    }
+    quizStats.textContent=`0/${quizOrder.length}`;
+    quizArea.appendChild(buildQuizCard(quizOrder[0]));
+  });
+  document.getElementById('shuffleQuizBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return;
+    s.questions.sort(()=>Math.random()-0.5); Store.save(); renderQuestions();
+  });
+
+  // --- Q Editor ---
+  document.getElementById('addQBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return alert('Bölüm seçin');
+    if(!qText.value.trim()) return alert('Soru boş olamaz');
+    const Q={ id:uid(), q:qText.value.trim(), opts:{A:optA.value,B:optB.value,C:optC.value,D:optD.value,E:optE.value}, correct:correct.value, explain:explain.value.trim() };
+    s.questions = s.questions || []; s.questions.push(Q); Store.save();
+    qText.value=''; optA.value=optB.value=optC.value=optD.value=optE.value=''; explain.value='';
+    renderQuestions();
+  });
+  document.getElementById('clearQBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return; if(!confirm('Bu bölümdeki TÜM sorular silinsin mi?')) return; s.questions=[]; Store.save(); renderQuestions();
+  });
+  document.getElementById('exportQBtn').addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return; const blob = new Blob([JSON.stringify(s.questions||[],null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(currentPdf()?.name||'kaynak')+'_'+s.name+'_sorular.json'; a.click();
+  });
+  document.getElementById('importQBtn').addEventListener('click',()=>{ document.getElementById('importQFile').click(); });
+  document.getElementById('importQFile').addEventListener('change',(e)=>{
+    const file=e.target.files[0]; if(!file) return; const fr=new FileReader(); fr.onload=()=>{
+      try{ const arr=JSON.parse(fr.result); const s=currentSection(); if(!s) return; if(!Array.isArray(arr)) throw new Error('Geçersiz JSON'); s.questions=arr; Store.save(); renderQuestions(); }catch(err){ alert('İçe aktarma hatası: '+err.message); }
+    }; fr.readAsText(file);
+  });
+
+  // --- Export / Import (Tüm Portal) ---
+  document.getElementById('exportBtn').addEventListener('click',()=>{
+    const blob=new Blob([JSON.stringify(Store.data,null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='calisma_portali.json'; a.click();
+  });
+  document.getElementById('importBtn').addEventListener('click',()=>{ document.getElementById('importFile').click(); });
+  document.getElementById('importFile').addEventListener('change',(e)=>{
+    const file=e.target.files[0]; if(!file) return; const fr=new FileReader(); fr.onload=()=>{
+      try{ const data=JSON.parse(fr.result); if(!data.pdfs) throw new Error('Geçersiz veri'); Store.data=data; Store.save(); renderPdfs(); }catch(err){ alert('İçe aktarma hatası: '+err.message); }
+    }; fr.readAsText(file);
+  });
+
+  // --- Kısayol: Ctrl+S kaydet ---
+  window.addEventListener('keydown',(e)=>{
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+      e.preventDefault(); const s=currentSection(); if(!s) return; s.text=editor.value; Store.save(); onSectionChange();
+    }
+  });
+
+  // --- Başlangıç: örnek iskelet ---
+  function seed(){
+    if(Store.data.pdfs.length) return;
+    const pid=uid();
+    Store.data.pdfs=[{id:pid,name:'Örnek Kaynak',activeSectionId:null,sections:[
+      {id:uid(),name:'Bölüm 1',text:'',done:false,questions:[]},
+      {id:uid(),name:'Bölüm 2',text:'',done:false,questions:[]}
+    ]}];
+    Store.data.activePdfId=pid; Store.data.pdfs[0].activeSectionId=Store.data.pdfs[0].sections[0].id;
+  }
+
+  // init
+  Store.load(); seed(); renderPdfs();
+  </script>
+</body>
+</html>
