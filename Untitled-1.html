@@ -104,6 +104,7 @@
         <button class="tab" data-tab="editor">İçerik Ekle/Düzenle</button>
         <button class="tab" data-tab="qeditor">Soru Editörü</button>
         <span class="pill" id="crumb">—</span>
+        <button class="btn ghost" id="saveHtmlBtn" style="margin-left:auto">HTML İndir</button>
       </div>
 
       <!-- STUDY -->
@@ -121,12 +122,23 @@
 
       <!-- QUIZ -->
       <section class="content" id="tab-quiz">
-        <div class="row" style="margin-bottom:8px">
+        <div class="row" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
           <button class="btn" id="startQuizBtn">Sınavı Başlat</button>
           <button class="btn ghost" id="shuffleQuizBtn">Soruları Karıştır</button>
+          <button class="btn ghost" id="resetQuizBtn">Sınavı Temizle</button>
           <div class="pill" id="quizStats">0/0</div>
+          <div class="pill" id="quizTimer">—</div>
         </div>
-        <div id="quizArea"></div>
+        <div class="progress"><span id="quizBar"></span></div>
+        <div id="quizArea" style="margin-top:10px"></div>
+        <div id="quizResult" class="card col" style="margin-top:10px;display:none">
+          <strong>Sınav Özeti</strong>
+          <div id="quizResultText" class="muted"></div>
+          <div class="row">
+            <button class="btn ok" id="restartQuizBtn">Tekrarla</button>
+            <button class="btn ghost" id="showAnswersBtn">Tüm Yanıtları Göster</button>
+          </div>
+        </div>
       </section>
 
       <!-- CONTENT EDITOR -->
@@ -200,6 +212,7 @@
   const globalProgress = document.getElementById('globalProgress');
   const progressText = document.getElementById('progressText');
   const crumb = document.getElementById('crumb');
+  const saveHtmlBtn = document.getElementById('saveHtmlBtn');
 
   const studyView = document.getElementById('studyView');
   const search = document.getElementById('search');
@@ -211,6 +224,16 @@
 
   const quizArea = document.getElementById('quizArea');
   const quizStats = document.getElementById('quizStats');
+  const quizTimer = document.getElementById('quizTimer');
+  const quizBar = document.getElementById('quizBar');
+  const quizResult = document.getElementById('quizResult');
+  const quizResultText = document.getElementById('quizResultText');
+
+  const quizStartBtn = document.getElementById('startQuizBtn');
+  const quizShuffleBtn = document.getElementById('shuffleQuizBtn');
+  const quizResetBtn = document.getElementById('resetQuizBtn');
+  const quizRestartBtn = document.getElementById('restartQuizBtn');
+  const quizShowAnswersBtn = document.getElementById('showAnswersBtn');
 
   const qText = document.getElementById('qText');
   const optA = document.getElementById('optA');
@@ -342,7 +365,7 @@
   document.getElementById('clearEditorBtn').addEventListener('click',()=>{ editor.value=''; });
 
   // --- Quiz Logic ---
-  let quizOrder=[]; let quizIndex=0; let correctCount=0;
+  let quizOrder=[]; let quizIndex=0; let correctCount=0; let quizStartTime=null; let quizTimerHandle=null;
   function renderQuestions(){
     const s=currentSection(); if(!s) return; qList.innerHTML='';
     (s.questions||[]).forEach(item=>{
@@ -352,10 +375,29 @@
     });
   }
 
-  function buildQuizCard(item){
+  function setQuizProgress(){
+    if(!quizOrder.length){ quizBar.style.width='0%'; return; }
+    const pct=Math.round((quizIndex/quizOrder.length)*100);
+    quizBar.style.width=pct+'%';
+  }
+
+  function startTimer(){
+    quizStartTime=Date.now();
+    clearInterval(quizTimerHandle);
+    quizTimerHandle=setInterval(()=>{
+      const diff=Math.floor((Date.now()-quizStartTime)/1000);
+      const m=String(Math.floor(diff/60)).padStart(2,'0');
+      const s=String(diff%60).padStart(2,'0');
+      quizTimer.textContent=`⏱️ ${m}:${s}`;
+    },1000);
+  }
+
+  function stopTimer(){ clearInterval(quizTimerHandle); quizTimerHandle=null; }
+
+  function buildQuizCard(item, idx){
     const card=document.createElement('div'); card.className='quiz-item';
     const opts=['A','B','C','D','E'];
-    card.innerHTML=`<div style="margin-bottom:8px"><strong>${item.q}</strong></div>`;
+    card.innerHTML=`<div style="margin-bottom:8px"><strong>${idx+1}. ${item.q}</strong></div>`;
     opts.forEach(k=>{
       const btn=document.createElement('button'); btn.className='btn ghost'; btn.style.margin='4px'; btn.textContent=`${k}) ${item.opts[k]}`;
       btn.addEventListener('click',()=>{
@@ -367,8 +409,12 @@
         card.appendChild(exp);
         quizIndex++;
         quizStats.textContent=`${correctCount}/${quizOrder.length}`;
+        setQuizProgress();
         if(quizIndex<quizOrder.length){
-          setTimeout(()=>{ quizArea.appendChild(buildQuizCard(quizOrder[quizIndex])); }, 250);
+          setTimeout(()=>{ quizArea.appendChild(buildQuizCard(quizOrder[quizIndex], quizIndex)); }, 250);
+        } else {
+          stopTimer();
+          showQuizSummary();
         }
       });
       card.appendChild(btn);
@@ -376,19 +422,50 @@
     return card;
   }
 
-  document.getElementById('startQuizBtn').addEventListener('click',()=>{
+  function resetQuizUI(){
+    quizArea.innerHTML='';
+    quizResult.style.display='none';
+    quizStats.textContent='0/0';
+    quizTimer.textContent='—';
+    quizBar.style.width='0%';
+    stopTimer();
+  }
+
+  function startQuiz(){
     const s=currentSection(); if(!s) return;
-    quizOrder=[...(s.questions||[])]; quizIndex=0; correctCount=0; quizArea.innerHTML='';
+    quizOrder=[...(s.questions||[])]; quizIndex=0; correctCount=0; resetQuizUI();
     if(!quizOrder.length){
       quizArea.innerHTML='<p class="muted">Bu bölüm için soru bulunmuyor. "Soru Editörü" sekmesinden ekleyin veya JSON içe aktarın.</p>';
-      quizStats.textContent='0/0'; return;
+      return;
     }
     quizStats.textContent=`0/${quizOrder.length}`;
-    quizArea.appendChild(buildQuizCard(quizOrder[0]));
-  });
-  document.getElementById('shuffleQuizBtn').addEventListener('click',()=>{
+    setQuizProgress();
+    startTimer();
+    quizArea.appendChild(buildQuizCard(quizOrder[0], 0));
+  }
+
+  function showQuizSummary(){
+    const total=quizOrder.length||1;
+    const pct=Math.round((correctCount*100)/total);
+    quizResultText.textContent=`${correctCount}/${total} doğru | Başarı: %${pct}`;
+    quizResult.style.display='flex';
+  }
+
+  quizStartBtn.addEventListener('click', startQuiz);
+  quizRestartBtn.addEventListener('click', startQuiz);
+  quizShuffleBtn.addEventListener('click',()=>{
     const s=currentSection(); if(!s) return;
     s.questions.sort(()=>Math.random()-0.5); Store.save(); renderQuestions();
+  });
+  quizResetBtn.addEventListener('click',()=>{ resetQuizUI(); });
+  quizShowAnswersBtn.addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return;
+    quizArea.innerHTML='';
+    (s.questions||[]).forEach((item,idx)=>{
+      const card=document.createElement('div'); card.className='quiz-item correct';
+      card.innerHTML=`<strong>${idx+1}. ${item.q}</strong><div class="muted">A) ${item.opts.A}<br/>B) ${item.opts.B}<br/>C) ${item.opts.C}<br/>D) ${item.opts.D}<br/>E) ${item.opts.E}</div><div class="muted">Doğru: ${item.correct}${item.explain? ' — '+item.explain:''}</div>`;
+      quizArea.appendChild(card);
+    });
   });
 
   // --- Q Editor ---
@@ -426,6 +503,17 @@
     }; fr.readAsText(file);
   });
 
+  // --- HTML dışa aktarma ---
+  saveHtmlBtn.addEventListener('click',()=>{
+    const html='<!doctype html>\n'+document.documentElement.outerHTML;
+    const blob=new Blob([html],{type:'text/html'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='ltad-portal.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
   // --- Kısayol: Ctrl+S kaydet ---
   window.addEventListener('keydown',(e)=>{
     if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
@@ -436,10 +524,77 @@
   // --- Başlangıç: örnek iskelet ---
   function seed(){
     if(Store.data.pdfs.length) return;
+
+    const ltadText = `Bu çalışma dosyası, Uzun Süreli Sporcu Gelişimi (LTAD) yaklaşımına dair 50 soruluk
+çoktan seçmeli bir sınav içerir. Sorular ve cevap anahtarı aşağıdaki konu başlıklarını
+kapsar:
+
+- Fiziksel okuryazarlık, evreler, antrenman/yarışma oranları
+- Duyarlı pencereler (sürat, kuvvet, esneklik, dayanıklılık, beceri)
+- PHV (zirve boy uzama hızı), büyüme ve olgunlaşma
+- Periyodizasyon, erken/ geç uzmanlaşma, aktif yaşam
+
+İpuçları:
+- \"Sınav Modu\" sekmesinde sorular peş peşe gelir, cevaplarınızı anında görürsünüz.
+- \"Soru Editörü\" ile soruları düzenleyebilir veya JSON olarak dışa/ içe aktarabilirsiniz.
+- Her bölüm tamamlandığında \"Bölümü Tamamlandı İşaretle\" butonunu kullanın.`;
+
+    const ltadQuestions = [
+      {q:'LTAD’nin temel amacı aşağıdakilerden hangisidir?',opts:{A:'Kısa sürede yüksek derece kazanmak',B:'Elit sporda hızlı özelleşmeyi zorlamak',C:'Biyolojik gelişimi gözeterek sürdürülebilir başarıyı hedeflemek',D:'Sadece kronolojik yaşa göre gruplamak',E:'Yalnızca müsabaka performansını ölçmek'},correct:'C'},
+      {q:'“Fiziksel okuryazarlık” hangi evrelerin ortak üst başlığıdır?',opts:{A:'Aktif Başlangıç – Eğlenceli Temel Eğitim – Antrenman için Antrenman',B:'Aktif Başlangıç – Eğlenceli Temel Eğitim – Antrenman Yapmayı Öğrenme',C:'Eğlenceli Temel Eğitim – Antrenman Yapmayı Öğrenme – Yarışmak için Antrenman',D:'Antrenman Yapmayı Öğrenme – Antrenman için Antrenman – Kazanmak için Antrenman',E:'Aktif Yaşam – Antrenman için Antrenman – Kazanmak için Antrenman'},correct:'B'},
+      {q:'“Antrenman için Antrenman” evresinin birincil amacı aşağıdakilerden hangisidir?',opts:{A:'Temel hareketleri ve oyunu ilişkilendirmek',B:'Genel spor becerilerini öğrenmek',C:'Aerobik temeli kurmak; sürati ve evre sonuna doğru kuvveti geliştirmek',D:'Yarışmayı öğrenmek',E:'İhtiyaca göre performansı sergilemek'},correct:'C'},
+      {q:'“Yarışmak için Antrenman” evresinde önerilen genel antrenman/yarışma oranı nedir?',opts:{A:'%70 / %30',B:'%60 / %40',C:'%50 / %50',D:'%40 / %60',E:'%25 / %75'},correct:'D'},
+      {q:'“Kazanmak için Antrenman” evresinde odak aşağıdakilerden hangisidir?',opts:{A:'Eğlenceli oyunla temel beceriler',B:'Genel spor becerilerinin öğrenimi',C:'Aerobik taban oluşturma',D:'Yarışmayı öğrenme',E:'Talebe göre en üst düzey performansı üretmek'},correct:'E'},
+      {q:'Aşağıdakilerden hangisi Aktif Başlangıç evresine uygun bir planlama ilkesidir?',opts:{A:'Her gün ≥60 dk hareket ve oyun',B:'Haftada 9–12 branşa özgü antrenman',C:'Tek/çok uçlu periyodizasyon',D:'Yoğun kuvvet antrenmanı',E:'Resmî sonuç odaklı yarışma'},correct:'A'},
+      {q:'Aktif Başlangıç evresinde oyunların önerilen dağılımı hangi seçenekte doğru verilmiştir?',opts:{A:'%75 yetişkin liderliğinde – %25 serbest',B:'%50 yetişkin – %50 serbest',C:'%25 yetişkin liderliğinde – %75 serbest',D:'%10 yetişkin – %90 serbest',E:'%100 serbest'},correct:'C'},
+      {q:'“Eğlenceli Temel Eğitim” evresinde yıl içi etkinlik planında önerilen aktivite/spor formu oranı:',opts:{A:'%90 / %10',B:'%75 / %25',C:'%60 / %40',D:'%50 / %50',E:'%25 / %75'},correct:'B'},
+      {q:'“Antrenman Yapmayı Öğrenmek” evresinde branş seçimi ve katılım için uygun yaklaşım hangisidir?',opts:{A:'Tek branşta erken uzmanlaşma',B:'Branş dışı aktivitelerden kaçınma',C:'Çeşitli branşları deneyimleme ve genel spor becerilerini edinme',D:'Sadece dayanıklılık geliştirme',E:'Sadece sürat geliştirme'},correct:'C'},
+      {q:'“Antrenman Yapmayı Öğrenmek” evresi için haftalık katılım önerisi hangi seçenekte doğru özetlenmiştir?',opts:{A:'Seçilen branş 1, farklı aktiviteler 1 (toplam 2)',B:'Seçilen branş 3, farklı branş/aktivite 3 (toplam 6)',C:'Seçilen branş 6–9 (branşa özgü)',D:'Branşa özgü 9–12',E:'Branşa özgü 9–15'},correct:'B'},
+      {q:'“Antrenman için Antrenman” evresinde haftalık branşa özgü antrenman sıklığı:',opts:{A:'1–2',B:'3–4',C:'6–9',D:'9–12',E:'9–15'},correct:'C'},
+      {q:'“Yarışmak için Antrenman” evresinde haftalık branşa özgü antrenman sıklığı:',opts:{A:'3–4',B:'5–7',C:'6–9',D:'9–12',E:'12–15'},correct:'D'},
+      {q:'“Kazanmak için Antrenman” evresinde haftalık branşa özgü antrenman sıklığı:',opts:{A:'3–4',B:'6–9',C:'9–12',D:'9–15',E:'15–18'},correct:'D'},
+      {q:'LTAD’de periyodizasyon ile ilgili doğru ifade hangisidir?',opts:{A:'Yalnızca tek uçlu periyodizasyon tüm evrelerde zorunludur',B:'Erken evrelerde periyodizasyona gerek yoktur',C:'Uygun evrelerde tek veya çift/çok uçlu periyodizasyon uygulanabilir',D:'Sadece yarışma döneminde periyodizasyon yapılır',E:'Sadece kuvvet için periyodizasyon gerekir'},correct:'C'},
+      {q:'“Fiziksel okuryazarlık” kazanımı en çok hangi evrelerle ilişkilidir?',opts:{A:'Antrenman için Antrenman – Yarışmak için Antrenman – Kazanmak için Antrenman',B:'Aktif Başlangıç – Eğlenceli Temel Eğitim – Antrenman Yapmayı Öğrenme',C:'Yarışmak için Antrenman – Kazanmak için Antrenman – Aktif Yaşam',D:'Sadece Aktif Yaşam',E:'Sadece Antrenman Yapmayı Öğrenmek'},correct:'B'},
+      {q:'Aşağıdakilerden hangisi LTAD’nin toplumsal hedeflerinden biridir?',opts:{A:'Yalnızca elit sporcu üretmek',B:'Sporla ilgisi olmayan bireyleri elemine etmek',C:'Yaşam boyu spor alışkanlığı olan sağlıklı toplum',D:'Çocuklukta yüksek hacimli kuvvet antrenmanı',E:'Erken yaşta üniform antrenman yükleri'},correct:'C'},
+      {q:'Kronolojik yaşa dayalı sınıflamanın temel sorunu nedir?',opts:{A:'Maliyetli olması',B:'Olgunluk farklarını göz ardı edebilmesi',C:'Ölçüm yapılamaması',D:'Koordinasyonu ölçmemesi',E:'Esnekliğe öncelik vermesi'},correct:'B'},
+      {q:'PHV (Zirve Boy Uzama Hızı) için tipik ortalama yaş aralığı hangisidir?',opts:{A:'Kız ~14, Erkek ~12',B:'Kız ~12, Erkek ~14',C:'Kız ~10, Erkek ~12',D:'Kız ~16, Erkek ~18',E:'Kız ~8, Erkek ~10'},correct:'B'},
+      {q:'PHV yaşının bireyler arası değişkenliği için doğru ifade:',opts:{A:'Herkes aynı yaşta PHV’ye ulaşır',B:'Sadece erkeklerde değişir',C:'Kızlarda ~9.3–15.0; erkeklerde ~12.0–15.8 yaş aralığında görülebilir',D:'PHV takvim yaşından bağımsızdır ve ölçülemez',E:'PHV yalnızca genetik testle saptanır'},correct:'C'},
+      {q:'Mirwald yaklaşımıyla PHV yaşını öngörmede aşağıdakilerden hangisi kullanılır?',opts:{A:'Kan laktatı',B:'Nabız değişkenliği',C:'Boy, oturma boyu, bacak uzunluğu ilişkisi, vücut kütlesi ve yaş',D:'İzokinetik tork',E:'Kemik mineral yoğunluğu'},correct:'C'},
+      {q:'Scammon’un büyüme eğrilerinde dört temel şablondan biri değildir:',opts:{A:'Nörolojik',B:'Genital',C:'Lenfoid',D:'Mitokondriyal',E:'Genel'},correct:'D'},
+      {q:'Scammon’a göre merkezi sinir sistemi (nörolojik) gelişimi yaklaşık kaç yaşta %95 düzeyine ulaşır?',opts:{A:'~3',B:'~5',C:'~7',D:'~10',E:'~12'},correct:'C'},
+      {q:'“Duyarlı pencereler” kavramı hangi yaklaşımın ayrılmaz parçasıdır?',opts:{A:'Sadece dayanıklılık antrenmanı kuramları',B:'LTAD – Büyüme/olgunlukla uyumlu antrenman düzeneği',C:'Yetişkin dayanıklılık modelleri',D:'Psikolojik hazırlık protokolleri',E:'Sadece esneklik planlaması'},correct:'B'},
+      {q:'Esneklik için duyarlı pencere en çok hangi yaş aralığıyla ilişkilidir?',opts:{A:'4–6',B:'6–10',C:'10–12',D:'12–14',E:'16–18'},correct:'B'},
+      {q:'Sürat için birinci pencere ağırlıkla aşağıdakilerden hangisine dayanır?',opts:{A:'Aerobik enerji sistemleri',B:'Anaerobik laktik kapasite',C:'Merkezi sinir sistemi; kısa, reaktif, 4–5 sn’den kısa uygulamalar',D:'Uzun süreli tempo koşuları',E:'Maksimal kuvvet tekrarları'},correct:'C'},
+      {q:'Sürat için ikinci pencereye uygun tipik uygulama tarifi:',opts:{A:'30–60 dk sürekli koşu',B:'5–20 sn arası tekrarlar, tekrarlar arası tam dinlenme, dar kapsamlı interval',C:'5–10 km LSD koşu',D:'8–12 RM squat setleri',E:'60–90 sn izometrik plank'},correct:'B'},
+      {q:'Dayanıklılık için uygun zamanlama:',opts:{A:'PHV’den önce aerobik temel, PHV sonrasında kademeli aerobik güç',B:'Yalnızca PHV’den sonra',C:'Yalnızca PHV’den önce',D:'Sadece yarışma döneminde',E:'Sadece aralıklı sprintler'},correct:'A'},
+      {q:'Kuvvet için duyarlı pencerelerle ilgili doğru kombinasyon:',opts:{A:'Erkek: PHV’den 12–18 ay sonra; Kız: PHV’den hemen sonra ve menarş dönemi',B:'Erkek: PHV’den 12–18 ay önce; Kız: sadece menarş',C:'Erkek: çocuklukta; Kız: sadece yetişkinlikte',D:'Erkek: menarş; Kız: PHV sonrası 24–36 ay',E:'Her iki cins: tamamen aynı zamanlama'},correct:'A'},
+      {q:'Beceri gelişimi için “altın çağ” olarak anılan dönem daha çok:',opts:{A:'4–6 yaş',B:'6–8 yaş',C:'7–12 yaş',D:'12–16 yaş',E:'16–18 yaş'},correct:'C'},
+      {q:'“ABC’s” kısaltması aşağıdakilerden hangisini ifade eder?',opts:{A:'Aerobic – Balance – Coordination',B:'Agility – Balance – Coordination (çeviklik–denge–koordinasyon)',C:'Agility – Breathing – Control',D:'Anaerobic – Balance – Control',E:'Ability – Base – Capacity'},correct:'B'},
+      {q:'“Antrenman Yapmayı Öğrenmek” evresinde yarışma ile ilgili doğru yaklaşım:',opts:{A:'Resmî, sonuç odaklı şampiyonalar',B:'Yerel ve resmî olabilir; asıl amaç becerileri uygulamak ve fair play’i pekiştirmek',C:'Yarışmadan tamamen kaçınmak',D:'Sadece bireysel testler',E:'Yalnızca taktik dersleri'},correct:'B'},
+      {q:'“Antrenman için Antrenman” evresinde etik ve fair play vurgusu için doğru ifade:',opts:{A:'Bu evrede etik kavramı ertelenir',B:'Sadece kazanma kültürü belirleyicidir',C:'Rakibe saygı ve etik yaklaşım özellikle güçlendirilmelidir',D:'Etik yalnızca antrenör eğitimine aittir',E:'Etik yalnızca elit seviyede önemlidir'},correct:'C'},
+      {q:'“Yarışmak için Antrenman” evresinde performans yönetimi açısından olmazsa olmaz uygulama:',opts:{A:'Test ve izleme ile güçlü/zayıf yönlerin belirlenmesi',B:'Yalnızca maç sayısını artırmak',C:'Yalnızca teknik tekrar sayısını artırmak',D:'Yalnızca mental antrenman',E:'Yalnızca kuvvet antrenmanı'},correct:'A'},
+      {q:'“Kazanmak için Antrenman” evresinde yardımcı kapasiteler vurgusu aşağıdakilerden hangisini içermez?',opts:{A:'Isınma-soğuma',B:'Beslenme/hidrasyon',C:'Toparlanma/rehenerasyon',D:'Spor tekniği dışında kalan zihinsel hazırlık',E:'Yalnızca takvim yaşı ile grup seçimi'},correct:'E'},
+      {q:'Aşağıdakilerden hangisi yardımcı kapasitelerin performansa katkısına dair doğru bir çıkarımdır?',opts:{A:'Genetik sınırda bile bunların optimize edilmesi performansı ileri taşıyabilir',B:'Sadece başlangıç seviyesinde etkilidir',C:'Elitlerde etkisi yoktur',D:'Yalnızca dayanıklılıkta geçerlidir',E:'Yalnızca esneklik için anlamlıdır'},correct:'A'},
+      {q:'Aktif Yaşam evresinde temel yaklaşım:',opts:{A:'Yüksek hacimli yarışma planı',B:'Bireyin arzusuna göre şekillenen sürdürülebilir fiziksel aktivite',C:'Zorunlu branşa özgü antrenman',D:'Sadece kuvvet gelişimi',E:'Sadece esneklik korunumu'},correct:'B'},
+      {q:'Erken özelleşen branşlar için en uygun örnek eşleştirme:',opts:{A:'Atletizm – Badminton',B:'Basketbol – Güreş',C:'Cimnastik – Artistik buz pateni',D:'Güreş – Atletizm',E:'Basketbol – Badminton'},correct:'C'},
+      {q:'Kanada’nın LTAD çerçevesini spor politikası olarak benimsemesi ve programın kapsayıcı adla güncellenmesi sırasıyla hangi yıllardadır?',opts:{A:'2000 – 2016',B:'2002 – 2019',C:'2004 – 2018',D:'2005 – 2020',E:'2008 – 2019'},correct:'B'},
+      {q:'Dünya Atletizm’in U18 Dünya Şampiyonası’nı sonlandırmasının (2017) LTAD bağlamındaki temel gerekçesi aşağıdakilerden hangisine en yakındır?',opts:{A:'Tesis maliyetlerinin yükselmesi',B:'Gençlerde erken “kazanmak için antrenman” amaçlarına kayma ve gelişim evrelerinin atlanması',C:'TV yayın haklarının sınırlılığı',D:'Hakem yetersizliği',E:'Sporcu sayısının düşmesi'},correct:'B'},
+      {q:'“Antrenman Yapmayı Öğrenmek” evresinde bilgi tabanı kazandırmada hangisi yer alır?',opts:{A:'Isınma-soğuma, esneme, beslenme, zihinsel hazırlık gibi temel bilgiler',B:'Yalnızca kuvvet teknikleri',C:'Yalnızca müsabaka kuralları',D:'Sadece müsabaka taktikleri',E:'Sadece laboratuvar testleri'},correct:'A'},
+      {q:'LTAD’de antrenman/yarışma oranlarından yanlış olanı seçiniz:',opts:{A:'Antrenman Yapmayı Öğrenmek: %70 / %30',B:'Antrenman için Antrenman: %60 / %40',C:'Yarışmak için Antrenman: %60 / %40',D:'Kazanmak için Antrenman: %25 / %75',E:'Aktif Başlangıç/Eğlenceli Temel Eğitim: eğlence/katılım odaklı'},correct:'C'},
+      {q:'Aktif Başlangıç evresinde bilişsel gelişimi desteklemek için önerilmeyen hangisidir?',opts:{A:'Bellek, bilişsel esneklik ve özdenetim çalışmaları',B:'Doğada keşfe dayalı, kontrollü risk içeren oyunlar',C:'Yalnızca sonuç odaklı resmi yarışmalar',D:'Sosyal bağlantıları destekleyen etkinlikler',E:'Konfor alanını güvenle genişleten küçük meydan okumalar'},correct:'C'},
+      {q:'“Antrenman için Antrenman” evresinin kritik fizyolojik gelişim göstergesi ile doğru ilişki:',opts:{A:'PHV öncesi dönem ve anaerobik güç',B:'PHV dönemi ve aerobik temel, evre sonuna doğru kuvvet',C:'PHV’den bağımsız dayanıklılık',D:'Yalnızca esneklik artışı',E:'Yalnızca koordinasyon'},correct:'B'},
+      {q:'LTAD’de alternatif yollar kavramı hangi ilkeyi vurgular?',opts:{A:'Her bireyin aynı çizgisel rotayı izlemesi',B:'Tek branşta zorunlu kariyer',C:'Bireysel farklılıklara göre farklı giriş/çıkış ve geçişlerin mümkün olması',D:'Sadece çocuklukta katılım',E:'Yalnızca elit seviyede devam'},correct:'C'},
+      {q:'“Eğlenceli Temel Eğitim” evresinde yarışma formu için doğru ifade:',opts:{A:'Resmî, kayıtlı ve sonuç odaklı',B:'Gayriresmî, sonuç kaydı olmaksızın',C:'Yalnızca ulusal ligler',D:'Yalnızca bireysel denemeler',E:'Tamamen yasak'},correct:'B'},
+      {q:'“Yarışmak için Antrenman” evresinde mental hazırlık için doğru yaklaşım:',opts:{A:'Önemsizdir',B:'Yalnızca elit seviyede gereklidir',C:'Branşa uygun düzeye getirilmelidir',D:'Yalnızca çocuklukta yapılır',E:'Sadece psikologlara bırakılmalıdır'},correct:'C'},
+      {q:'PHV’nin takvim yaşından ±2 yıl sapabilmesi gerçeği antrenörlere neyi hatırlatır?',opts:{A:'Herkese aynı yük verilebilir',B:'Geç gelişenler kalıcı olarak dışlanmalıdır',C:'Aynı yaşta 4 yıla varan gelişim farkları olabileceği',D:'PHV sahada ölçülemez',E:'Sadece boy uzunluğu önemlidir'},correct:'C'},
+      {q:'Antrenman için Antrenman evresinde kuvvet gelişimi için doğru başlangıç yaklaşımı:',opts:{A:'Erken çocuklukta ağır serbest ağırlık',B:'Doğru teknik eğitimi sonrası serbest ağırlıklara geçiş',C:'Sadece makineler',D:'Yalnızca izometrik',E:'Kuvvetten tamamen kaçınma'},correct:'B'},
+      {q:'“Aktif Yaşam” evresinde sağlıklı yaşlanma için önerilen temel çok bileşenli yapı aşağıdakilerden hangisini içermez?',opts:{A:'Uygun fiziksel aktivite',B:'Bilişsel işlev',C:'Psikolojik iyi oluş ve sosyal bağlantı',D:'Kronik durumların yönetimi ve beslenme',E:'Yalnızca rekabetçi müsabaka hacmini artırma'},correct:'E'},
+      {q:'LTAD’nin kısa vadeye değil uzun vadeye odaklanması aşağıdakilerden hangisiyle en iyi açıklanır?',opts:{A:'10 yıl/10.000 saat ilkesi ve pediatrik gelişime uyumlu planlama',B:'Yalnızca yetenek taraması',C:'Sadece kuvvet testi odaklılık',D:'Sadece yetişkin antrenmanlarının kopyası',E:'Sadece yarışma sayısını artırma'},correct:'A'},
+    ];
+
     const pid=uid();
-    Store.data.pdfs=[{id:pid,name:'Örnek Kaynak',activeSectionId:null,sections:[
-      {id:uid(),name:'Bölüm 1',text:'',done:false,questions:[]},
-      {id:uid(),name:'Bölüm 2',text:'',done:false,questions:[]}
+    Store.data.pdfs=[{id:pid,name:'LTAD Soru Seti',activeSectionId:null,sections:[
+      {id:uid(),name:'50 Soruluk Test',text:ltadText,done:false,questions:ltadQuestions}
     ]}];
     Store.data.activePdfId=pid; Store.data.pdfs[0].activeSectionId=Store.data.pdfs[0].sections[0].id;
   }
