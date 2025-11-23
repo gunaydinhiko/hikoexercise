@@ -104,6 +104,7 @@
         <button class="tab" data-tab="editor">İçerik Ekle/Düzenle</button>
         <button class="tab" data-tab="qeditor">Soru Editörü</button>
         <span class="pill" id="crumb">—</span>
+        <button class="btn ghost" id="saveHtmlBtn" style="margin-left:auto">HTML İndir</button>
       </div>
 
       <!-- STUDY -->
@@ -121,12 +122,23 @@
 
       <!-- QUIZ -->
       <section class="content" id="tab-quiz">
-        <div class="row" style="margin-bottom:8px">
+        <div class="row" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
           <button class="btn" id="startQuizBtn">Sınavı Başlat</button>
           <button class="btn ghost" id="shuffleQuizBtn">Soruları Karıştır</button>
+          <button class="btn ghost" id="resetQuizBtn">Sınavı Temizle</button>
           <div class="pill" id="quizStats">0/0</div>
+          <div class="pill" id="quizTimer">—</div>
         </div>
-        <div id="quizArea"></div>
+        <div class="progress"><span id="quizBar"></span></div>
+        <div id="quizArea" style="margin-top:10px"></div>
+        <div id="quizResult" class="card col" style="margin-top:10px;display:none">
+          <strong>Sınav Özeti</strong>
+          <div id="quizResultText" class="muted"></div>
+          <div class="row">
+            <button class="btn ok" id="restartQuizBtn">Tekrarla</button>
+            <button class="btn ghost" id="showAnswersBtn">Tüm Yanıtları Göster</button>
+          </div>
+        </div>
       </section>
 
       <!-- CONTENT EDITOR -->
@@ -200,6 +212,7 @@
   const globalProgress = document.getElementById('globalProgress');
   const progressText = document.getElementById('progressText');
   const crumb = document.getElementById('crumb');
+  const saveHtmlBtn = document.getElementById('saveHtmlBtn');
 
   const studyView = document.getElementById('studyView');
   const search = document.getElementById('search');
@@ -211,6 +224,16 @@
 
   const quizArea = document.getElementById('quizArea');
   const quizStats = document.getElementById('quizStats');
+  const quizTimer = document.getElementById('quizTimer');
+  const quizBar = document.getElementById('quizBar');
+  const quizResult = document.getElementById('quizResult');
+  const quizResultText = document.getElementById('quizResultText');
+
+  const quizStartBtn = document.getElementById('startQuizBtn');
+  const quizShuffleBtn = document.getElementById('shuffleQuizBtn');
+  const quizResetBtn = document.getElementById('resetQuizBtn');
+  const quizRestartBtn = document.getElementById('restartQuizBtn');
+  const quizShowAnswersBtn = document.getElementById('showAnswersBtn');
 
   const qText = document.getElementById('qText');
   const optA = document.getElementById('optA');
@@ -342,7 +365,7 @@
   document.getElementById('clearEditorBtn').addEventListener('click',()=>{ editor.value=''; });
 
   // --- Quiz Logic ---
-  let quizOrder=[]; let quizIndex=0; let correctCount=0;
+  let quizOrder=[]; let quizIndex=0; let correctCount=0; let quizStartTime=null; let quizTimerHandle=null;
   function renderQuestions(){
     const s=currentSection(); if(!s) return; qList.innerHTML='';
     (s.questions||[]).forEach(item=>{
@@ -352,10 +375,29 @@
     });
   }
 
-  function buildQuizCard(item){
+  function setQuizProgress(){
+    if(!quizOrder.length){ quizBar.style.width='0%'; return; }
+    const pct=Math.round((quizIndex/quizOrder.length)*100);
+    quizBar.style.width=pct+'%';
+  }
+
+  function startTimer(){
+    quizStartTime=Date.now();
+    clearInterval(quizTimerHandle);
+    quizTimerHandle=setInterval(()=>{
+      const diff=Math.floor((Date.now()-quizStartTime)/1000);
+      const m=String(Math.floor(diff/60)).padStart(2,'0');
+      const s=String(diff%60).padStart(2,'0');
+      quizTimer.textContent=`⏱️ ${m}:${s}`;
+    },1000);
+  }
+
+  function stopTimer(){ clearInterval(quizTimerHandle); quizTimerHandle=null; }
+
+  function buildQuizCard(item, idx){
     const card=document.createElement('div'); card.className='quiz-item';
     const opts=['A','B','C','D','E'];
-    card.innerHTML=`<div style="margin-bottom:8px"><strong>${item.q}</strong></div>`;
+    card.innerHTML=`<div style="margin-bottom:8px"><strong>${idx+1}. ${item.q}</strong></div>`;
     opts.forEach(k=>{
       const btn=document.createElement('button'); btn.className='btn ghost'; btn.style.margin='4px'; btn.textContent=`${k}) ${item.opts[k]}`;
       btn.addEventListener('click',()=>{
@@ -367,8 +409,12 @@
         card.appendChild(exp);
         quizIndex++;
         quizStats.textContent=`${correctCount}/${quizOrder.length}`;
+        setQuizProgress();
         if(quizIndex<quizOrder.length){
-          setTimeout(()=>{ quizArea.appendChild(buildQuizCard(quizOrder[quizIndex])); }, 250);
+          setTimeout(()=>{ quizArea.appendChild(buildQuizCard(quizOrder[quizIndex], quizIndex)); }, 250);
+        } else {
+          stopTimer();
+          showQuizSummary();
         }
       });
       card.appendChild(btn);
@@ -376,19 +422,50 @@
     return card;
   }
 
-  document.getElementById('startQuizBtn').addEventListener('click',()=>{
+  function resetQuizUI(){
+    quizArea.innerHTML='';
+    quizResult.style.display='none';
+    quizStats.textContent='0/0';
+    quizTimer.textContent='—';
+    quizBar.style.width='0%';
+    stopTimer();
+  }
+
+  function startQuiz(){
     const s=currentSection(); if(!s) return;
-    quizOrder=[...(s.questions||[])]; quizIndex=0; correctCount=0; quizArea.innerHTML='';
+    quizOrder=[...(s.questions||[])]; quizIndex=0; correctCount=0; resetQuizUI();
     if(!quizOrder.length){
       quizArea.innerHTML='<p class="muted">Bu bölüm için soru bulunmuyor. "Soru Editörü" sekmesinden ekleyin veya JSON içe aktarın.</p>';
-      quizStats.textContent='0/0'; return;
+      return;
     }
     quizStats.textContent=`0/${quizOrder.length}`;
-    quizArea.appendChild(buildQuizCard(quizOrder[0]));
-  });
-  document.getElementById('shuffleQuizBtn').addEventListener('click',()=>{
+    setQuizProgress();
+    startTimer();
+    quizArea.appendChild(buildQuizCard(quizOrder[0], 0));
+  }
+
+  function showQuizSummary(){
+    const total=quizOrder.length||1;
+    const pct=Math.round((correctCount*100)/total);
+    quizResultText.textContent=`${correctCount}/${total} doğru | Başarı: %${pct}`;
+    quizResult.style.display='flex';
+  }
+
+  quizStartBtn.addEventListener('click', startQuiz);
+  quizRestartBtn.addEventListener('click', startQuiz);
+  quizShuffleBtn.addEventListener('click',()=>{
     const s=currentSection(); if(!s) return;
     s.questions.sort(()=>Math.random()-0.5); Store.save(); renderQuestions();
+  });
+  quizResetBtn.addEventListener('click',()=>{ resetQuizUI(); });
+  quizShowAnswersBtn.addEventListener('click',()=>{
+    const s=currentSection(); if(!s) return;
+    quizArea.innerHTML='';
+    (s.questions||[]).forEach((item,idx)=>{
+      const card=document.createElement('div'); card.className='quiz-item correct';
+      card.innerHTML=`<strong>${idx+1}. ${item.q}</strong><div class="muted">A) ${item.opts.A}<br/>B) ${item.opts.B}<br/>C) ${item.opts.C}<br/>D) ${item.opts.D}<br/>E) ${item.opts.E}</div><div class="muted">Doğru: ${item.correct}${item.explain? ' — '+item.explain:''}</div>`;
+      quizArea.appendChild(card);
+    });
   });
 
   // --- Q Editor ---
@@ -424,6 +501,17 @@
     const file=e.target.files[0]; if(!file) return; const fr=new FileReader(); fr.onload=()=>{
       try{ const data=JSON.parse(fr.result); if(!data.pdfs) throw new Error('Geçersiz veri'); Store.data=data; Store.save(); renderPdfs(); }catch(err){ alert('İçe aktarma hatası: '+err.message); }
     }; fr.readAsText(file);
+  });
+
+  // --- HTML dışa aktarma ---
+  saveHtmlBtn.addEventListener('click',()=>{
+    const html='<!doctype html>\n'+document.documentElement.outerHTML;
+    const blob=new Blob([html],{type:'text/html'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='ltad-portal.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
   });
 
   // --- Kısayol: Ctrl+S kaydet ---
